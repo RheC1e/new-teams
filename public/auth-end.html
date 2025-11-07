@@ -58,7 +58,12 @@
       async function finishAuth() {
         try {
           await microsoftTeams.app.initialize()
-          const msalInstance = new msal.PublicClientApplication(msalConfig)
+          const msalGlobal = window.msal
+          if (!msalGlobal) {
+            throw new Error('MSAL 腳本載入失敗，請重新嘗試。')
+          }
+
+          const msalInstance = new msalGlobal.PublicClientApplication(msalConfig)
           await msalInstance.initialize()
 
           const authResult = await msalInstance.handleRedirectPromise()

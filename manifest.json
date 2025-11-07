@@ -37,7 +37,9 @@
     "messageTeamMembers"
   ],
   "validDomains": [
-    "new-teams-potp.vercel.app"
+    "new-teams-potp.vercel.app",
+    "alcdn.msauth.net",
+    "graph.microsoft.com"
   ],
   "webApplicationInfo": {
     "id": "33abd69a-d012-498a-bddb-8608cbf10c2d",
