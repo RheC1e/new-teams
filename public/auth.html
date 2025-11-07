@@ -147,6 +147,12 @@
             showHint(`將以 ${loginHint} 嘗試自動登入…`)
           }
 
+          const redirectResult = await msalInstance.handleRedirectPromise()
+          if (redirectResult?.accessToken) {
+            microsoftTeams.authentication.notifySuccess(redirectResult.accessToken)
+            return
+          }
+
           const silentParams = {
             scopes: ['User.Read'],
             loginHint
@@ -158,16 +164,14 @@
             microsoftTeams.authentication.notifySuccess(silentResult.accessToken)
             return
           } catch (silentError) {
-            console.log('ssoSilent 失敗，改用 loginPopup', silentError)
+            console.log('ssoSilent 失敗，改用 loginRedirect', silentError)
           }
 
-          setStatus('需要授權', '請在跳出的 Microsoft 登入視窗中完成授權。')
-          const popupResult = await msalInstance.loginPopup({
+          setStatus('需要授權', '即將重新導向至 Microsoft 登入頁面。')
+          await msalInstance.loginRedirect({
             scopes: ['User.Read'],
             loginHint
           })
-
-          microsoftTeams.authentication.notifySuccess(popupResult.accessToken)
         } catch (error) {
           console.error('授權流程失敗', error)
           const message = (error && error.message) || '授權流程失敗，請稍後再試。'
@@ -176,7 +180,7 @@
         }
       }
 
-      getToken()
+      void getToken()
     </script>
   </body>
 </html>
