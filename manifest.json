@@ -27,8 +27,8 @@
     {
       "entityId": "autologin",
       "name": "自動登入測試",
-      "contentUrl": "https://YOUR_VERCEL_URL.vercel.app",
-      "websiteUrl": "https://YOUR_VERCEL_URL.vercel.app",
+      "contentUrl": "https://new-teams-potp.vercel.app",
+      "websiteUrl": "https://new-teams-potp.vercel.app",
       "scopes": ["personal"]
     }
   ],
@@ -37,11 +37,11 @@
     "messageTeamMembers"
   ],
   "validDomains": [
-    "YOUR_VERCEL_URL.vercel.app"
+    "new-teams-potp.vercel.app"
   ],
   "webApplicationInfo": {
     "id": "YOUR_APP_ID_HERE",
-    "resource": "api://YOUR_VERCEL_URL.vercel.app/YOUR_APP_ID_HERE"
+    "resource": "api://new-teams-potp.vercel.app/YOUR_APP_ID_HERE"
   }
 }
 
