@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Microsoft 365 授權 - 完成</title>
+    <title>Microsoft 365 授權</title>
     <script src="https://res.cdn.office.net/teams-js/2.0.0/js/MicrosoftTeams.min.js"></script>
     <style>
       body {
@@ -21,6 +21,7 @@
         border-radius: 16px;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
         max-width: 360px;
+        width: calc(100% - 32px);
         text-align: center;
       }
       .card h1 {
@@ -33,12 +34,30 @@
         line-height: 1.6;
         color: #4b5563;
       }
+      .hint {
+        margin-top: 20px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        font-size: 13px;
+      }
+      .error {
+        margin-top: 20px;
+        padding: 12px;
+        border-radius: 8px;
+        background: #fef2f2;
+        color: #b91c1c;
+        font-size: 13px;
+      }
     </style>
   </head>
   <body>
     <div class="card">
-      <h1>完成授權中</h1>
-      <p>若此畫面停留過久，請關閉視窗重新授權</p>
+      <h1 id="title">請稍候</h1>
+      <p id="message">正在準備 Microsoft 365 授權流程…</p>
+      <div id="hint" class="hint" style="display: none;"></div>
+      <div id="error" class="error" style="display: none;"></div>
     </div>
 
     <script>
@@ -46,12 +65,29 @@
         auth: {
           clientId: '33abd69a-d012-498a-bddb-8608cbf10c2d',
           authority: 'https://login.microsoftonline.com/cd4e36bd-ac9a-4236-9f91-a6718b6b5e45',
-          redirectUri: window.location.origin + '/auth-end.html'
+          redirectUri: window.location.href
         },
         cache: {
           cacheLocation: 'localStorage',
           storeAuthStateInCookie: false
         }
+      }
+
+      function setStatus(title, message) {
+        document.getElementById('title').textContent = title
+        document.getElementById('message').textContent = message
+      }
+
+      function showHint(message) {
+        const hint = document.getElementById('hint')
+        hint.textContent = message
+        hint.style.display = 'block'
+      }
+
+      function showError(message) {
+        const errorBox = document.getElementById('error')
+        errorBox.textContent = message
+        errorBox.style.display = 'block'
       }
 
       function loadMsal() {
@@ -97,38 +133,50 @@
         })
       }
 
-      async function finishAuth() {
+      async function getToken() {
         try {
           await microsoftTeams.app.initialize()
           const msalGlobal = await loadMsal()
           const msalInstance = new msalGlobal.PublicClientApplication(msalConfig)
           await msalInstance.initialize()
 
-          const authResult = await msalInstance.handleRedirectPromise()
-          if (authResult?.accessToken) {
-            microsoftTeams.authentication.notifySuccess(authResult.accessToken)
-            return
+          const params = new URLSearchParams(window.location.search)
+          const loginHint = params.get('loginHint') || undefined
+
+          if (loginHint) {
+            showHint(`將以 ${loginHint} 嘗試自動登入…`)
           }
 
-          const accounts = msalInstance.getAllAccounts()
-          if (!accounts.length) {
-            throw new Error('無已登入的帳號，請重新授權。')
-          }
-
-          const tokenResult = await msalInstance.acquireTokenSilent({
+          const silentParams = {
             scopes: ['User.Read'],
-            account: accounts[0]
+            loginHint
+          }
+
+          try {
+            setStatus('請稍候', '正在嘗試使用現有登入狀態…')
+            const silentResult = await msalInstance.ssoSilent(silentParams)
+            microsoftTeams.authentication.notifySuccess(silentResult.accessToken)
+            return
+          } catch (silentError) {
+            console.log('ssoSilent 失敗，改用 loginPopup', silentError)
+          }
+
+          setStatus('需要授權', '請在跳出的 Microsoft 登入視窗中完成授權。')
+          const popupResult = await msalInstance.loginPopup({
+            scopes: ['User.Read'],
+            loginHint
           })
 
-          microsoftTeams.authentication.notifySuccess(tokenResult.accessToken)
+          microsoftTeams.authentication.notifySuccess(popupResult.accessToken)
         } catch (error) {
-          console.error('auth-end 發生錯誤', error)
-          const message = error && error.message ? error.message : '無法取得 Microsoft 365 授權'
+          console.error('授權流程失敗', error)
+          const message = (error && error.message) || '授權流程失敗，請稍後再試。'
+          showError(message)
           microsoftTeams.authentication.notifyFailure(message)
         }
       }
 
-      finishAuth()
+      getToken()
     </script>
   </body>
 </html>

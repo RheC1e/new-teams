@@ -36,7 +36,7 @@
   - Azure Entra ID
     - 應用程式註冊同上 Client ID。
     - SPA Redirect URI 新增：`https://new-teams-potp.vercel.app`
-    - SPA Redirect URI 新增：`https://new-teams-potp.vercel.app/auth-end.html`
+    - SPA Redirect URI 新增：`https://new-teams-potp.vercel.app/auth.html`
     - Application ID URI：`api://new-teams-potp.vercel.app/33abd69a-d012-498a-bddb-8608cbf10c2d`
     - 定義 scope：`access_as_user`（完整值同 Application ID URI + `/access_as_user`）
     - 授權客戶端：Teams 桌面 `1fec8e78-bce4-4aaf-ab1b-5451cc387264`

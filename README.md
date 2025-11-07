@@ -43,7 +43,7 @@ npm run build
 1. **manifest.json** - 更新 `contentUrl`、`websiteUrl`、`validDomains` 和 `webApplicationInfo`
 2. **Azure AD 應用程式註冊**
    - SPA Redirect URI 新增：`https://{your-domain}.vercel.app`
-   - SPA Redirect URI 新增：`https://{your-domain}.vercel.app/auth-end.html`
+   - SPA Redirect URI 新增：`https://{your-domain}.vercel.app/auth.html`
    - Application ID URI 與公開 API 與 Teams manifest 保持一致
 
 ## 注意事項

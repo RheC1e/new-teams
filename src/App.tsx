@@ -164,7 +164,7 @@ async function requestGraphToken(loginHint?: string): Promise<string> {
   graphAuthPromise = new Promise((resolve, reject) => {
     const hintParam = loginHint ? `?loginHint=${encodeURIComponent(loginHint)}` : ''
     microsoftTeams.authentication.authenticate({
-      url: `${window.location.origin}/auth-start.html${hintParam}`,
+      url: `${window.location.origin}/auth.html${hintParam}`,
       width: 600,
       height: 535,
       successCallback: (token: string) => {
