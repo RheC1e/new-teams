@@ -1,5 +1,11 @@
 ## RHEMA Teams 自動登入專案技術總結
 
+### 0. 概覽
+
+- **目前採用路線**：Teams 內建彈窗 OAuth（`microsoftTeams.authentication.authenticate()` + `MSAL loginRedirect`）。
+- **體驗**：首次或 Token 過期時會顯示 Microsoft 授權頁，其餘時間使用快取的 Graph Token，重新整理時不再重複跳轉。
+- **產出**：顯示名稱、中文姓名、帳號、使用者 ID 皆由 Microsoft Graph `/me` 回傳，確認為真正的 Microsoft 365 登入。
+
 ### 1. 以往專案失敗的原因（來源：`以往teams失敗自動登入/`）
 
 **pwa-demo（請款 PWA）**
@@ -22,6 +28,7 @@
 - 啟動後立即呼叫 Teams 認證流程，在桌面版中會跳出內嵌授權視窗。
 - 授權頁 (`public/auth.html`) 先嘗試 `ssoSilent`，若需要互動則改走 `loginRedirect`（無彈窗、避免被阻擋）。
 - 取得 Microsoft Graph Access Token 後，呼叫 `/me` 取得顯示名稱、中文姓/名、帳號與使用者 ID。
+- 於前端快取 Graph Token（`sessionStorage`），僅在失效或明確錯誤時才重新授權，避免重新整理頁面時重複顯示登入動作。
 
 **程式流程（`src/App.tsx`）**
 1. `await microsoftTeams.app.initialize()`。
@@ -65,6 +72,25 @@
 3. **部署與上傳**：照上節部署流程操作。
 4. **驗證邏輯**：沿用 `auth.html` + `loginRedirect` 流程即可；只要確保 Azure 的 Redirect URI 正確，Teams 桌面版便能自動帶入帳號並完成授權。
 5. **擴充需求**：若要調用更多 Graph API，可在 Azure Entra ID 增加對應 scope，授權頁會一併完成同意；若需調用自家 API，可在後端驗證此次取得的 Graph Token 或實作 On-Behalf-Of 流程。
+
+### 5. 未來升級：Tab SSO + On-Behalf-Of（路線 A）
+
+若要完全移除互動視窗，可改採「Tab SSO + 後端 OBO」：
+
+1. **前端**
+   - 僅呼叫 `authentication.getAuthToken()` 取得 Tab SSO Token。
+   - 將該 Token 傳給後端（例如 Vercel Serverless / Azure Function）。
+
+2. **後端（OBO 流程）**
+   - 使用 MSAL（Node/.NET/Java 等）呼叫 `POST https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token`。
+   - 參數包含 `client_id`, `client_secret`/證書、`requested_token_use=on_behalf_of`、`assertion`（前端 token）與目標 scope（如 `https://graph.microsoft.com/.default`）。
+   - 換得 Graph Access Token 後，後端去呼叫 Graph `/me` 或其他端點，再回傳資料給前端。
+
+3. **管理與安全**
+   - 需要在 Azure Entra ID 設定 Client Secret 或憑證，並於部署平台安全地儲存。
+   - 可在 Teams Admin Center 先行 Grant org-wide consent，確保使用者首次即能零互動登入。
+
+此方案能達成真正的「無視窗自動登入」，並適合在後端還需要調用多個受保護 API 時使用。現階段若無後端資源，可持續使用既有的路線 B；待後端就緒後再切換至路線 A 即可。
 
 ### 4. 快速指令摘要
 

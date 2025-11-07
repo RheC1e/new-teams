@@ -157,6 +157,11 @@ function deriveUserInfo(params: DeriveParams): UserInfo {
 let graphAuthPromise: Promise<string> | null = null
 
 async function requestGraphToken(loginHint?: string): Promise<string> {
+  const cached = getCachedGraphToken()
+  if (cached) {
+    return cached
+  }
+
   if (graphAuthPromise) {
     return graphAuthPromise
   }
@@ -169,11 +174,13 @@ async function requestGraphToken(loginHint?: string): Promise<string> {
       height: 535,
       successCallback: (token: string) => {
         console.log('取得 Graph Token 成功')
+        cacheGraphToken(token)
         graphAuthPromise = null
         resolve(token)
       },
       failureCallback: (reason: string) => {
         console.error('Graph 授權失敗:', reason)
+        clearGraphTokenCache()
         graphAuthPromise = null
         reject(new Error(reason || 'Graph 授權失敗'))
       }
@@ -193,6 +200,9 @@ async function fetchGraphProfile(token: string): Promise<GraphProfile> {
   if (!response.ok) {
     const text = await response.text()
     console.error('Graph API 錯誤:', response.status, text)
+    if (response.status === 401 || response.status === 403) {
+      clearGraphTokenCache()
+    }
     throw new Error(`Graph API 錯誤：${response.status}`)
   }
 
@@ -239,6 +249,9 @@ const doubleSurnames = [
   '慕容', '司徒', '司空', '司寇', '申屠', '南宮', '東方', '西門'
 ]
 
+const GRAPH_TOKEN_CACHE_KEY = 'teams-graph-token'
+const GRAPH_TOKEN_EXPIRES_AT_KEY = 'teams-graph-token-exp'
+
 function splitChineseName(name?: string) {
   if (!name) {
     return { surname: undefined, givenName: undefined }
@@ -272,5 +285,62 @@ function splitChineseName(name?: string) {
   }
 
   return { surname: trimmed, givenName: undefined }
+}
+
+function getCachedGraphToken(): string | null {
+  try {
+    const token = sessionStorage.getItem(GRAPH_TOKEN_CACHE_KEY)
+    const expiresAtRaw = sessionStorage.getItem(GRAPH_TOKEN_EXPIRES_AT_KEY)
+    if (!token || !expiresAtRaw) {
+      return null
+    }
+
+    const expiresAt = Number(expiresAtRaw)
+    if (Number.isNaN(expiresAt) || Date.now() >= expiresAt - 60_000) {
+      clearGraphTokenCache()
+      return null
+    }
+
+    return token
+  } catch (error) {
+    console.warn('讀取快取 Token 失敗', error)
+    return null
+  }
+}
+
+function cacheGraphToken(token: string) {
+  try {
+    const payload = decodeJwt(token)
+    if (!payload?.exp) {
+      return
+    }
+    const expiresAt = payload.exp * 1000
+    sessionStorage.setItem(GRAPH_TOKEN_CACHE_KEY, token)
+    sessionStorage.setItem(GRAPH_TOKEN_EXPIRES_AT_KEY, String(expiresAt))
+  } catch (error) {
+    console.warn('快取 Graph Token 失敗', error)
+  }
+}
+
+function clearGraphTokenCache() {
+  sessionStorage.removeItem(GRAPH_TOKEN_CACHE_KEY)
+  sessionStorage.removeItem(GRAPH_TOKEN_EXPIRES_AT_KEY)
+}
+
+function decodeJwt(token: string): { exp?: number } {
+  const parts = token.split('.')
+  if (parts.length < 2) {
+    return {}
+  }
+
+  const payload = parts[1]
+  const normalized = payload.replace(/-/g, '+').replace(/_/g, '/')
+  try {
+    const decoded = atob(normalized)
+    return JSON.parse(decoded)
+  } catch (error) {
+    console.warn('解析 Token 失敗', error)
+    return {}
+  }
 }
 
