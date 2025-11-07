@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Microsoft 365 授權 - 完成</title>
+    <script src="https://res.cdn.office.net/teams-js/2.0.0/js/MicrosoftTeams.min.js"></script>
+    <script src="https://alcdn.msauth.net/browser/2.39.0/js/msal-browser.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        font-family: 'Segoe UI', sans-serif;
+        background: #f5f7ff;
+      }
+      .card {
+        background: white;
+        padding: 32px;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        max-width: 360px;
+        text-align: center;
+      }
+      .card h1 {
+        font-size: 20px;
+        margin-bottom: 12px;
+        color: #1f2937;
+      }
+      .card p {
+        font-size: 14px;
+        line-height: 1.6;
+        color: #4b5563;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>完成授權中</h1>
+      <p>若此畫面停留過久，請關閉視窗重新授權</p>
+    </div>
+
+    <script>
+      const msalConfig = {
+        auth: {
+          clientId: '33abd69a-d012-498a-bddb-8608cbf10c2d',
+          authority: 'https://login.microsoftonline.com/cd4e36bd-ac9a-4236-9f91-a6718b6b5e45',
+          redirectUri: window.location.origin + '/auth-end.html'
+        },
+        cache: {
+          cacheLocation: 'localStorage',
+          storeAuthStateInCookie: false
+        }
+      }
+
+      async function finishAuth() {
+        try {
+          await microsoftTeams.app.initialize()
+          const msalInstance = new msal.PublicClientApplication(msalConfig)
+          await msalInstance.initialize()
+
+          const authResult = await msalInstance.handleRedirectPromise()
+          if (authResult?.accessToken) {
+            microsoftTeams.authentication.notifySuccess(authResult.accessToken)
+            return
+          }
+
+          const accounts = msalInstance.getAllAccounts()
+          if (!accounts.length) {
+            throw new Error('無已登入的帳號，請重新授權。')
+          }
+
+          const tokenResult = await msalInstance.acquireTokenSilent({
+            scopes: ['User.Read'],
+            account: accounts[0]
+          })
+
+          microsoftTeams.authentication.notifySuccess(tokenResult.accessToken)
+        } catch (error) {
+          console.error('auth-end 發生錯誤', error)
+          const message = error && error.message ? error.message : '無法取得 Microsoft 365 授權'
+          microsoftTeams.authentication.notifyFailure(message)
+        }
+      }
+
+      finishAuth()
+    </script>
+  </body>
+</html>
+

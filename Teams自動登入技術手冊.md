@@ -19,26 +19,27 @@
 
 **技術重點**
 - 以 Vite + React + TypeScript 建置，使用 `@microsoft/teams-js@2.x`。
-- 只做三件事：初始化 Teams SDK → 取得 context → 顯示 context 中的使用者資訊。
-- `getAuthToken()` 只作健康檢查，失敗時不再影響畫面；完全不呼叫 Graph API。
+- 啟動後立即呼叫 Teams 認證流程，在桌面版中會跳出內嵌授權對話框。
+- 認證成功後取得 Microsoft Graph Access Token，使用 `/me` API 取得姓名、中文姓/名、帳號與使用者 ID。
 
 **程式流程（`src/App.tsx`）**
 1. `await microsoftTeams.app.initialize()`
-2. `const context = await microsoftTeams.app.getContext()` 取得 `context.user`。
-3. 將 `displayName / userPrincipalName / id` 顯示於畫面。
-4. 嘗試 `getAuthToken({ silent: true })`，僅記錄成功/失敗 log。
+2. `await microsoftTeams.app.getContext()` 取得 Teams 使用者資訊與租戶 ID。
+3. 透過 `microsoftTeams.authentication.authenticate()` 開啟 `auth-start.html` → `auth-end.html` 的 MSAL 流程以取得 Graph Access Token。
+4. 使用 `fetch('https://graph.microsoft.com/v1.0/me')` 取得真實帳號資訊，並顯示於畫面。
 
-**必要設定**
-- `manifest.json`
-  - `id` 與 `webApplicationInfo.id`：`33abd69a-d012-498a-bddb-8608cbf10c2d`
-  - `webApplicationInfo.resource`：`api://new-teams-potp.vercel.app/33abd69a-d012-498a-bddb-8608cbf10c2d`
-  - `contentUrl` / `websiteUrl` / `validDomains`：`https://new-teams-potp.vercel.app`
-- Azure Entra ID
-  - 應用程式註冊同上 Client ID。
-  - SPA Redirect URI：`https://new-teams-potp.vercel.app`
-  - Application ID URI：`api://new-teams-potp.vercel.app/33abd69a-d012-498a-bddb-8608cbf10c2d`
-  - 定義 scope：`access_as_user`（完整值同 Application ID URI + `/access_as_user`）
-  - 授權客戶端：Teams 桌面 `1fec8e78-bce4-4aaf-ab1b-5451cc387264`（已設定於原應用程式）
+- **必要設定**
+  - `manifest.json`
+    - `id` 與 `webApplicationInfo.id`：`33abd69a-d012-498a-bddb-8608cbf10c2d`
+    - `webApplicationInfo.resource`：`api://new-teams-potp.vercel.app/33abd69a-d012-498a-bddb-8608cbf10c2d`
+    - `contentUrl` / `websiteUrl` / `validDomains`：`https://new-teams-potp.vercel.app`
+  - Azure Entra ID
+    - 應用程式註冊同上 Client ID。
+    - SPA Redirect URI 新增：`https://new-teams-potp.vercel.app`
+    - SPA Redirect URI 新增：`https://new-teams-potp.vercel.app/auth-end.html`
+    - Application ID URI：`api://new-teams-potp.vercel.app/33abd69a-d012-498a-bddb-8608cbf10c2d`
+    - 定義 scope：`access_as_user`（完整值同 Application ID URI + `/access_as_user`）
+    - 授權客戶端：Teams 桌面 `1fec8e78-bce4-4aaf-ab1b-5451cc387264`
 
 **部署與測試流程**
 1. **推送程式碼**：`git push origin main`
@@ -46,7 +47,8 @@
 3. **Teams 套件**：
    - 執行 `zip -r teams-autologin-package.zip manifest.json icon-color.png icon-outline.png`
    - 在 Teams 管理中心上傳 ZIP。
-4. **驗證**：Teams 桌面版按 `⌘ + R` 重新整理；畫面應顯示登入成功與使用者資訊。
+4. **Azure Entra 設定**：確認兩個 SPA Redirect URI 都存在（根網址與 `/auth-end.html`）。
+5. **驗證**：Teams 桌面版按 `⌘ + R` 重新整理；應跳出授權對話框，授權後畫面顯示 Graph 回傳的名稱、帳號與 ID。
 
 **快取刷新建議**
 - 若 Teams 未抓到新版，可在 `contentUrl` 加查詢參數（例：`?build=c074614`）。
