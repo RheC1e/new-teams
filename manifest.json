@@ -1,0 +1,47 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "YOUR_APP_ID_HERE",
+  "packageName": "com.rhema.teams.autologin",
+  "developer": {
+    "name": "RHEMA",
+    "websiteUrl": "https://rhema.com.tw",
+    "privacyUrl": "https://rhema.com.tw/privacy",
+    "termsOfUseUrl": "https://rhema.com.tw/terms"
+  },
+  "name": {
+    "short": "Teams 自動登入測試",
+    "full": "Teams Microsoft 365 自動登入測試應用程式"
+  },
+  "description": {
+    "short": "測試 Microsoft 365 自動登入功能",
+    "full": "此應用程式用於測試 Teams 桌面版中的 Microsoft 365 自動登入功能"
+  },
+  "icons": {
+    "outline": "icon-outline.png",
+    "color": "icon-color.png"
+  },
+  "accentColor": "#667eea",
+  "staticTabs": [
+    {
+      "entityId": "autologin",
+      "name": "自動登入測試",
+      "contentUrl": "https://YOUR_VERCEL_URL.vercel.app",
+      "websiteUrl": "https://YOUR_VERCEL_URL.vercel.app",
+      "scopes": ["personal"]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "YOUR_VERCEL_URL.vercel.app"
+  ],
+  "webApplicationInfo": {
+    "id": "YOUR_APP_ID_HERE",
+    "resource": "api://YOUR_VERCEL_URL.vercel.app/YOUR_APP_ID_HERE"
+  }
+}
+
