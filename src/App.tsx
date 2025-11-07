@@ -4,6 +4,7 @@ import './App.css'
 
 interface UserInfo {
   displayName?: string
+  email?: string
   userPrincipalName?: string
   id?: string
 }
@@ -14,49 +15,38 @@ function App() {
   const [errorMessage, setErrorMessage] = useState<string>('')
 
   useEffect(() => {
-    // 初始化 Teams SDK
-    microsoftTeams.app.initialize().then(() => {
-      console.log('Teams SDK 初始化成功')
-      
-      // 取得使用者資訊（自動登入）
-      microsoftTeams.authentication.getAuthToken({
-        resources: [],
-        silent: true
-      }).then((token: string) => {
+    const init = async () => {
+      try {
+        await microsoftTeams.app.initialize()
+        console.log('Teams SDK 初始化成功')
+
+        const context = await microsoftTeams.app.getContext()
+        console.log('Teams context:', context)
+
+        // 取得 SSO Token（不直接使用，但可確認自動登入成功）
+        const token = await microsoftTeams.authentication.getAuthToken({
+          silent: true
+        })
         console.log('取得 Token 成功:', token.substring(0, 20) + '...')
-        
-        // 使用 Token 取得使用者資訊
-        fetch('https://graph.microsoft.com/v1.0/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`)
-          }
-          return response.json()
-        })
-        .then((data: UserInfo) => {
-          console.log('使用者資訊:', data)
-          setUserInfo(data)
-          setStatus('success')
-        })
-        .catch((error: Error) => {
-          console.error('取得使用者資訊失敗:', error)
-          setErrorMessage(error.message)
-          setStatus('error')
-        })
-      }).catch((error: Error) => {
-        console.error('取得 Token 失敗:', error)
-        setErrorMessage(error.message)
+
+        const user = {
+          displayName: context.user?.displayName,
+          email: context.user?.email,
+          userPrincipalName: context.user?.userPrincipalName,
+          id: context.user?.azureActiveDirectoryId
+        }
+
+        setUserInfo(user)
+        setStatus('success')
+      } catch (error) {
+        console.error('自動登入流程失敗', error)
+        const message = error instanceof Error ? error.message : '未知錯誤'
+        setErrorMessage(message)
         setStatus('error')
-      })
-    }).catch((error: Error) => {
-      console.error('Teams SDK 初始化失敗:', error)
-      setErrorMessage(error.message)
-      setStatus('error')
-    })
+      }
+    }
+
+    void init()
   }, [])
 
   return (
