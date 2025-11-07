@@ -31,4 +31,5 @@ dist-ssr
 
 # Teams app package
 *.zip
+!teams-autologin-package.zip
 
