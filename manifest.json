@@ -2,7 +2,7 @@
   "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
   "manifestVersion": "1.16",
   "version": "1.0.0",
-  "id": "YOUR_APP_ID_HERE",
+  "id": "33abd69a-d012-498a-bddb-8608cbf10c2d",
   "packageName": "com.rhema.teams.autologin",
   "developer": {
     "name": "RHEMA",
@@ -40,8 +40,8 @@
     "new-teams-potp.vercel.app"
   ],
   "webApplicationInfo": {
-    "id": "YOUR_APP_ID_HERE",
-    "resource": "api://new-teams-potp.vercel.app/YOUR_APP_ID_HERE"
+    "id": "33abd69a-d012-498a-bddb-8608cbf10c2d",
+    "resource": "api://new-teams-potp.vercel.app/33abd69a-d012-498a-bddb-8608cbf10c2d"
   }
 }
 
