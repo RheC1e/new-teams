@@ -23,12 +23,6 @@ function App() {
         const context = await microsoftTeams.app.getContext()
         console.log('Teams context:', context)
 
-        // 取得 SSO Token（不直接使用，但可確認自動登入成功）
-        const token = await microsoftTeams.authentication.getAuthToken({
-          silent: true
-        })
-        console.log('取得 Token 成功:', token.substring(0, 20) + '...')
-
         const user = {
           displayName: context.user?.displayName,
           email: context.user?.email,
@@ -38,6 +32,16 @@ function App() {
 
         setUserInfo(user)
         setStatus('success')
+
+        // 嘗試取得 SSO Token（不成功也不影響顯示）
+        try {
+          const token = await microsoftTeams.authentication.getAuthToken({
+            silent: true
+          })
+          console.log('取得 Token 成功:', token.substring(0, 20) + '...')
+        } catch (tokenError) {
+          console.warn('取得 Token 失敗，但已取得 Teams Context', tokenError)
+        }
       } catch (error) {
         console.error('自動登入流程失敗', error)
         const message = error instanceof Error ? error.message : '未知錯誤'
