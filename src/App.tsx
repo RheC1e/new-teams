@@ -23,11 +23,19 @@ function App() {
         const context = await microsoftTeams.app.getContext()
         console.log('Teams context:', context)
 
+        const teamsUser = context.user as {
+          displayName?: string
+          email?: string
+          userPrincipalName?: string
+          id?: string
+          aadObjectId?: string
+        } | undefined
+
         const user = {
-          displayName: context.user?.displayName,
-          email: context.user?.email,
-          userPrincipalName: context.user?.userPrincipalName,
-          id: context.user?.azureActiveDirectoryId
+          displayName: teamsUser?.displayName,
+          email: teamsUser?.email ?? teamsUser?.userPrincipalName,
+          userPrincipalName: teamsUser?.userPrincipalName,
+          id: teamsUser?.id ?? teamsUser?.aadObjectId
         }
 
         setUserInfo(user)
