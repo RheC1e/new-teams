@@ -19,14 +19,16 @@
 
 **技術重點**
 - 以 Vite + React + TypeScript 建置，使用 `@microsoft/teams-js@2.x`。
-- 啟動後立即呼叫 Teams 認證流程，在桌面版中會跳出內嵌授權對話框。
-- 認證成功後取得 Microsoft Graph Access Token，使用 `/me` API 取得姓名、中文姓/名、帳號與使用者 ID。
+- 啟動後立即呼叫 Teams 認證流程，在桌面版中會跳出內嵌授權視窗。
+- 授權頁 (`public/auth.html`) 先嘗試 `ssoSilent`，若需要互動則改走 `loginRedirect`（無彈窗、避免被阻擋）。
+- 取得 Microsoft Graph Access Token 後，呼叫 `/me` 取得顯示名稱、中文姓/名、帳號與使用者 ID。
 
 **程式流程（`src/App.tsx`）**
-1. `await microsoftTeams.app.initialize()`
+1. `await microsoftTeams.app.initialize()`。
 2. `await microsoftTeams.app.getContext()` 取得 Teams 使用者資訊與租戶 ID。
-3. 透過 `microsoftTeams.authentication.authenticate()` 開啟 `auth-start.html` → `auth-end.html` 的 MSAL 流程以取得 Graph Access Token。
-4. 使用 `fetch('https://graph.microsoft.com/v1.0/me')` 取得真實帳號資訊，並顯示於畫面。
+3. 呼叫 `microsoftTeams.authentication.authenticate()` 開啟 `auth.html`，將 `loginHint` 帶入授權頁。
+4. 授權頁先嘗試 `ssoSilent` 取得 Token；若失敗則重導至 Microsoft 登入頁完成授權，回到同一頁後透過 `handleRedirectPromise()` 提取 Token，最後 `notifySuccess` 回主頁。
+5. 主頁使用 `fetch('https://graph.microsoft.com/v1.0/me')` 取得真實帳號資訊並顯示。
 
 - **必要設定**
   - `manifest.json`
@@ -47,7 +49,7 @@
 3. **Teams 套件**：
    - 執行 `zip -r teams-autologin-package.zip manifest.json icon-color.png icon-outline.png`
    - 在 Teams 管理中心上傳 ZIP。
-4. **Azure Entra 設定**：確認兩個 SPA Redirect URI 都存在（根網址與 `/auth-end.html`）。
+4. **Azure Entra 設定**：確認兩個 SPA Redirect URI 都存在（根網址與 `/auth.html`）。
 5. **驗證**：Teams 桌面版按 `⌘ + R` 重新整理；應跳出授權對話框，授權後畫面顯示 Graph 回傳的名稱、帳號與 ID。
 
 **快取刷新建議**
@@ -61,8 +63,8 @@
    - 更新 `manifest.json` 的 `contentUrl / validDomains / webApplicationInfo.resource`。
    - 於 Azure Entra ID 同步更新 Redirect URI 與 Application ID URI。
 3. **部署與上傳**：照上節部署流程操作。
-4. **驗證邏輯**：需顯示 Teams context 中的基本資料即可；除非另有需求，不要直接呼叫 Graph API。
-5. **擴充需求**：若未來要調用 Graph，建議由後端 API 代為呼叫或採額外授權流程，避免前端直接使用 `getAuthToken` 呼叫 Graph 造成 401。
+4. **驗證邏輯**：沿用 `auth.html` + `loginRedirect` 流程即可；只要確保 Azure 的 Redirect URI 正確，Teams 桌面版便能自動帶入帳號並完成授權。
+5. **擴充需求**：若要調用更多 Graph API，可在 Azure Entra ID 增加對應 scope，授權頁會一併完成同意；若需調用自家 API，可在後端驗證此次取得的 Graph Token 或實作 On-Behalf-Of 流程。
 
 ### 4. 快速指令摘要
 
