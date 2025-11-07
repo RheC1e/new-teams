@@ -7,6 +7,9 @@ interface UserInfo {
   email?: string
   userPrincipalName?: string
   id?: string
+  tenantId?: string
+  chineseSurname?: string
+  chineseGivenName?: string
 }
 
 function App() {
@@ -31,12 +34,15 @@ function App() {
           aadObjectId?: string
         } | undefined
 
-        const user = {
+        const tenantId = context.user?.tenant?.id
+
+        const user = deriveUserInfo({
           displayName: teamsUser?.displayName,
           email: teamsUser?.email ?? teamsUser?.userPrincipalName,
           userPrincipalName: teamsUser?.userPrincipalName,
-          id: teamsUser?.id ?? teamsUser?.aadObjectId
-        }
+          id: teamsUser?.id ?? teamsUser?.aadObjectId,
+          tenantId
+        })
 
         setUserInfo(user)
         setStatus('success')
@@ -79,6 +85,11 @@ function App() {
             {userInfo && (
               <div className="user-info">
                 <p><strong>顯示名稱：</strong>{userInfo.displayName || '未提供'}</p>
+                <p><strong>中文姓名：</strong>
+                  {userInfo.chineseSurname || userInfo.chineseGivenName
+                    ? `${userInfo.chineseSurname ?? ''}${userInfo.chineseGivenName ?? ''}`
+                    : '未提供'}
+                </p>
                 <p><strong>帳號：</strong>{userInfo.userPrincipalName || '未提供'}</p>
                 <p><strong>使用者 ID：</strong>{userInfo.id || '未提供'}</p>
               </div>
@@ -100,4 +111,68 @@ function App() {
 }
 
 export default App
+
+interface RawUserInfo {
+  displayName?: string
+  email?: string
+  userPrincipalName?: string
+  id?: string
+  tenantId?: string
+}
+
+function deriveUserInfo(raw: RawUserInfo): UserInfo {
+  const { displayName, email, userPrincipalName, id, tenantId } = raw
+  const { surname, givenName } = splitChineseName(displayName)
+
+  return {
+    displayName,
+    email,
+    userPrincipalName,
+    id,
+    tenantId,
+    chineseSurname: surname,
+    chineseGivenName: givenName
+  }
+}
+
+const doubleSurnames = [
+  '歐陽', '司馬', '端木', '上官', '夏侯', '諸葛', '尉遲', '皇甫',
+  '澹台', '公孫', '仲孫', '軒轅', '令狐', '鍾離', '宇文', '長孫',
+  '慕容', '司徒', '司空', '司寇', '申屠', '南宮', '東方', '西門'
+]
+
+function splitChineseName(name?: string) {
+  if (!name) {
+    return { surname: undefined, givenName: undefined }
+  }
+
+  const trimmed = name.trim()
+  if (!trimmed) {
+    return { surname: undefined, givenName: undefined }
+  }
+
+  if (/\s+/.test(trimmed)) {
+    const parts = trimmed.split(/\s+/)
+    const surname = parts.shift()
+    return {
+      surname,
+      givenName: parts.length > 0 ? parts.join(' ') : undefined
+    }
+  }
+
+  if (/^[\x00-\x7F]+$/.test(trimmed)) {
+    return { surname: trimmed, givenName: undefined }
+  }
+
+  const possibleDouble = trimmed.slice(0, 2)
+  if (doubleSurnames.includes(possibleDouble) && trimmed.length > 2) {
+    return { surname: possibleDouble, givenName: trimmed.slice(2) }
+  }
+
+  if (trimmed.length >= 2) {
+    return { surname: trimmed.slice(0, 1), givenName: trimmed.slice(1) }
+  }
+
+  return { surname: trimmed, givenName: undefined }
+}
 
