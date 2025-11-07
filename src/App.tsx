@@ -33,7 +33,8 @@ function App() {
         const tenantId = context.user?.tenant?.id
 
         setStatus('waitingConsent')
-        const graphToken = await requestGraphToken()
+        const loginHint = teamsUser?.userPrincipalName || teamsUser?.email
+        const graphToken = await requestGraphToken(loginHint)
         const graphProfile = await fetchGraphProfile(graphToken)
 
         const user = deriveUserInfo({
@@ -153,22 +154,33 @@ function deriveUserInfo(params: DeriveParams): UserInfo {
   }
 }
 
-async function requestGraphToken(): Promise<string> {
-  return new Promise((resolve, reject) => {
+let graphAuthPromise: Promise<string> | null = null
+
+async function requestGraphToken(loginHint?: string): Promise<string> {
+  if (graphAuthPromise) {
+    return graphAuthPromise
+  }
+
+  graphAuthPromise = new Promise((resolve, reject) => {
+    const hintParam = loginHint ? `?loginHint=${encodeURIComponent(loginHint)}` : ''
     microsoftTeams.authentication.authenticate({
-      url: `${window.location.origin}/auth-start.html`,
+      url: `${window.location.origin}/auth-start.html${hintParam}`,
       width: 600,
       height: 535,
       successCallback: (token: string) => {
         console.log('取得 Graph Token 成功')
+        graphAuthPromise = null
         resolve(token)
       },
       failureCallback: (reason: string) => {
         console.error('Graph 授權失敗:', reason)
+        graphAuthPromise = null
         reject(new Error(reason || 'Graph 授權失敗'))
       }
     })
   })
+
+  return graphAuthPromise
 }
 
 async function fetchGraphProfile(token: string): Promise<GraphProfile> {
@@ -204,6 +216,10 @@ function normalizeErrorMessage(error: unknown): string {
 function translateAuthError(message: string): string {
   if (!message) {
     return '登入流程中斷，請重新嘗試。'
+  }
+
+  if (message.includes('interaction_in_progress')) {
+    return '授權流程尚未完成，請稍後再試或關閉視窗後重新開啟應用程式。'
   }
 
   if (message.includes('CancelledByUser')) {

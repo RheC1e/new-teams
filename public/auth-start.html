@@ -104,8 +104,12 @@
           const msalInstance = new msalGlobal.PublicClientApplication(msalConfig)
           await msalInstance.initialize()
 
+          const params = new URLSearchParams(window.location.search)
+          const loginHint = params.get('loginHint') || undefined
+
           await msalInstance.loginRedirect({
-            scopes: ['User.Read']
+            scopes: ['User.Read'],
+            loginHint
           })
         } catch (error) {
           console.error('auth-start 發生錯誤', error)
