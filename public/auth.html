@@ -65,7 +65,7 @@
         auth: {
           clientId: '33abd69a-d012-498a-bddb-8608cbf10c2d',
           authority: 'https://login.microsoftonline.com/cd4e36bd-ac9a-4236-9f91-a6718b6b5e45',
-          redirectUri: window.location.href
+          redirectUri: window.location.origin + '/auth.html'
         },
         cache: {
           cacheLocation: 'localStorage',
@@ -170,7 +170,8 @@
           setStatus('需要授權', '即將重新導向至 Microsoft 登入頁面。')
           await msalInstance.loginRedirect({
             scopes: ['User.Read'],
-            loginHint
+            loginHint,
+            redirectUri: window.location.origin + '/auth.html'
           })
         } catch (error) {
           console.error('授權流程失敗', error)
