@@ -410,29 +410,33 @@ async function requestGraphToken(loginHint?: string): Promise<CachedGraphToken> 
   graphAuthPromise = new Promise((resolve, reject) => {
     const hintParam = loginHint ? `?loginHint=${encodeURIComponent(loginHint)}` : ''
 
-    const authUrl = `${window.location.origin}/auth.html${hintParam}`
-    const windowFeatures = 'noopener,noreferrer,width=600,height=535'
-
-    const openAuthWindow = () => {
-      const authWindow = window.open(authUrl, '_blank', windowFeatures)
-      if (!authWindow) {
-        throw new Error('無法開啟授權視窗，請允許彈出視窗或改用桌面版。')
-      }
-
-      const checkClosed = setInterval(() => {
-        if (authWindow.closed) {
-          clearInterval(checkClosed)
-          if (graphAuthPromise) {
-            graphAuthPromise = null
-            reject(new Error('使用者已關閉授權視窗'))
-          }
+    if (isSafari()) {
+      try {
+        const authWindow = window.open(`${window.location.origin}/auth.html${hintParam}`, '_blank')
+        if (!authWindow) {
+          throw new Error('無法開啟授權分頁，請允許彈出視窗或改用桌面版。')
         }
-      }, 500)
+
+        const checkClosed = setInterval(() => {
+          if (authWindow.closed) {
+            clearInterval(checkClosed)
+            if (graphAuthPromise) {
+              graphAuthPromise = null
+              reject(new Error('使用者已關閉授權視窗'))
+            }
+          }
+        }, 500)
+        return
+      } catch (error) {
+        graphAuthPromise = null
+        reject(error instanceof Error ? error : new Error(String(error)))
+        return
+      }
     }
 
     try {
       microsoftTeams.authentication.authenticate({
-        url: authUrl,
+        url: `${window.location.origin}/auth.html${hintParam}`,
         width: 600,
         height: 535,
         successCallback: (token: string) => {
@@ -442,23 +446,13 @@ async function requestGraphToken(loginHint?: string): Promise<CachedGraphToken> 
           resolve(cachedToken)
         },
         failureCallback: (reason: string) => {
-          console.warn('Teams authenticate 失敗，改用 window.open:', reason)
-          try {
-            openAuthWindow()
-          } catch (error) {
-            graphAuthPromise = null
-            reject(error instanceof Error ? error : new Error(String(error)))
-          }
+          graphAuthPromise = null
+          reject(new Error(reason || 'Graph 授權失敗'))
         }
       })
     } catch (error) {
-      console.warn('Teams authenticate 拋例外，改用 window.open:', error)
-      try {
-        openAuthWindow()
-      } catch (fallbackError) {
-        graphAuthPromise = null
-        reject(fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)))
-      }
+      graphAuthPromise = null
+      reject(error instanceof Error ? error : new Error(String(error)))
     }
   })
 
