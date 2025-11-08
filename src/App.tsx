@@ -3,7 +3,7 @@ import { PublicClientApplication } from '@azure/msal-browser'
 import * as microsoftTeams from '@microsoft/teams-js'
 import './App.css'
 
-type AuthStatus = 'loading' | 'waitingConsent' | 'success' | 'error'
+type AuthStatus = 'loading' | 'waitingConsent' | 'manual' | 'success' | 'error'
 type HostEnvironment = 'unknown' | 'teams-desktop' | 'teams-web' | 'teams-mobile' | 'standalone'
 
 interface UserInfo {
@@ -45,7 +45,9 @@ function App() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [environment, setEnvironment] = useState<HostEnvironment>('unknown')
+  const [manualAuthInProgress, setManualAuthInProgress] = useState(false)
   const msalInstanceRef = useRef<PublicClientApplication | null>(null)
+  const teamsContextRef = useRef<microsoftTeams.app.Context | null>(null)
 
   useEffect(() => {
     const init = async () => {
@@ -53,6 +55,7 @@ function App() {
         setStatus('loading')
         await microsoftTeams.app.initialize()
         const context = await microsoftTeams.app.getContext()
+        teamsContextRef.current = context
         const clientType = context.app?.host?.clientType ?? 'unknown'
         const detectedEnv: HostEnvironment =
           clientType === 'desktop' ? 'teams-desktop'
@@ -96,7 +99,18 @@ function App() {
       const teamsUser = context.user as TeamsUser | undefined
       const loginHint = teamsUser?.userPrincipalName || teamsUser?.email
 
-      const tokenResult = await requestGraphToken(loginHint)
+      let tokenResult = getCachedGraphToken()
+      const requireManual =
+        environment === 'teams-web' && isSafari() && !tokenResult
+
+      if (requireManual) {
+        setStatus('manual')
+        return
+      }
+
+      if (!tokenResult) {
+        tokenResult = await requestGraphToken(loginHint)
+      }
       const graphProfile = await fetchGraphProfile(tokenResult.token)
       const user = deriveUserInfo({
         teamsUser,
@@ -112,6 +126,44 @@ function App() {
       const message = normalizeErrorMessage(error)
       setErrorMessage(message)
       setStatus('error')
+    }
+  }
+
+  const handleManualAuth = async () => {
+    if (manualAuthInProgress) {
+      return
+    }
+
+    try {
+      setManualAuthInProgress(true)
+      setStatus('waitingConsent')
+
+      const context = teamsContextRef.current
+      if (!context) {
+        throw new Error('尚未取得 Teams context，請重新整理頁面後重試。')
+      }
+
+      const teamsUser = context.user as TeamsUser | undefined
+      const loginHint = teamsUser?.userPrincipalName || teamsUser?.email
+
+      const tokenResult = await requestGraphToken(loginHint)
+      const graphProfile = await fetchGraphProfile(tokenResult.token)
+      const user = deriveUserInfo({
+        teamsUser,
+        graphProfile,
+        tenantId: context.user?.tenant?.id,
+        tokenPayload: tokenResult.payload
+      })
+
+      setUserInfo(user)
+      setStatus('success')
+    } catch (error) {
+      console.error('手動授權失敗', error)
+      const message = normalizeErrorMessage(error)
+      setErrorMessage(message)
+      setStatus('error')
+    } finally {
+      setManualAuthInProgress(false)
     }
   }
 
@@ -209,6 +261,24 @@ function App() {
             <div className="spinner"></div>
             <h1>請授權存取 Microsoft 365</h1>
             <p>若未看到 Teams 對話框，請檢查是否被視窗擋住或被彈出視窗阻擋</p>
+          </div>
+        )}
+
+        {status === 'manual' && (
+          <div className="status-card manual">
+            <div className="manual-icon">⚠️</div>
+            <h1>Safari 需手動授權</h1>
+            <p>
+              Safari 網頁版 Teams 會阻擋自動授權。請點擊下方按鈕在新視窗完成授權，授權後視窗可關閉並回到此頁。
+            </p>
+            <button
+              className="manual-button"
+              onClick={handleManualAuth}
+              disabled={manualAuthInProgress}
+            >
+              {manualAuthInProgress ? '授權進行中…' : '在新視窗授權'}
+            </button>
+            <small>授權完成後重新整理，此提示將不再出現。</small>
           </div>
         )}
 
@@ -558,7 +628,7 @@ function getEnvironmentMessage(env: HostEnvironment) {
     case 'teams-web':
       return {
         title: '偵測到 Teams 網頁版',
-        message: '授權流程將在同一頁面或新分頁進行。若瀏覽器提示「在桌面或帶標籤開啟」，建議直接選擇或改用桌面版以獲得完整體驗。'
+        message: '授權流程將在同一頁面或新分頁進行。若是 Safari 可使用下方手動授權按鈕或改用桌面版。'
       }
     case 'standalone':
       return {
@@ -568,6 +638,11 @@ function getEnvironmentMessage(env: HostEnvironment) {
     default:
       return null
   }
+}
+
+function isSafari(): boolean {
+  const ua = navigator.userAgent
+  return ua.includes('Safari') && !ua.includes('Chrome') && !ua.includes('Chromium')
 }
 
 interface CachedGraphToken {

@@ -46,6 +46,38 @@
   color: #0c4a6e;
 }
 
+.status-card.manual {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.manual-icon {
+  font-size: 40px;
+}
+
+.manual-button {
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  box-shadow: 0 10px 25px rgba(37, 99, 235, 0.2);
+  transition: all 0.2s ease;
+}
+
+.manual-button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.manual-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .status-card {
   background: white;
   border-radius: 16px;
