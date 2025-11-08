@@ -58,7 +58,7 @@ function App() {
           clientType === 'desktop' ? 'teams-desktop'
             : clientType === 'web' ? 'teams-web'
               : clientType === 'android' || clientType === 'ios' ? 'teams-mobile'
-                : 'teams-desktop'
+                : 'standalone'
 
         setEnvironment(detectedEnv)
 
@@ -118,20 +118,20 @@ function App() {
   const loginViaMsal = async (loginHint?: string, tenantId?: string) => {
     try {
       setStatus('waitingConsent')
-      const tokenResult = await ensureMsalGraphToken(loginHint)
-      if (!tokenResult) {
-        return
-      }
+        const tokenResult = await ensureMsalGraphToken(loginHint)
+        if (!tokenResult) {
+          return
+        }
 
-      const graphProfile = await fetchGraphProfile(tokenResult.token)
-      const user = deriveUserInfo({
-        graphProfile,
-        tenantId: tenantId ?? tokenResult.payload?.tid,
-        tokenPayload: tokenResult.payload
-      })
+        const graphProfile = await fetchGraphProfile(tokenResult.token)
+        const user = deriveUserInfo({
+          graphProfile,
+          tenantId: tenantId ?? tokenResult.payload?.tid,
+          tokenPayload: tokenResult.payload
+        })
 
-      setUserInfo(user)
-      setStatus('success')
+        setUserInfo(user)
+        setStatus('success')
     } catch (error) {
       console.error('MSAL 登入流程失敗', error)
       const message = normalizeErrorMessage(error)
@@ -140,7 +140,7 @@ function App() {
     }
   }
 
-  const ensureMsalGraphToken = async (loginHint?: string): Promise<CachedGraphToken | null> => {
+  const ensureMsalGraphToken = async (loginHint?: string): Promise<CachedGraphToken> => {
     const cached = getCachedGraphToken()
     if (cached) {
       return cached
@@ -169,17 +169,19 @@ function App() {
         await msalInstance.acquireTokenRedirect({
           scopes: GRAPH_SCOPES,
           account: accounts[0],
-          loginHint
+          loginHint,
+          redirectUri: window.location.href
         })
-        return null
+        throw new Error('redirect_pending')
       }
     }
 
     await msalInstance.loginRedirect({
       scopes: GRAPH_SCOPES,
-      loginHint
+      loginHint,
+      redirectUri: window.location.href
     })
-    return null
+    throw new Error('redirect_pending')
   }
 
   const environmentInfo = getEnvironmentMessage(environment)
@@ -385,7 +387,7 @@ function translateAuthError(message: string): string {
     return '登入流程中斷，請重新嘗試。'
   }
 
-  if (message.includes('interaction_in_progress')) {
+  if (message.includes('interaction_in_progress') || message.includes('redirect_pending')) {
     return '授權流程尚未完成，請稍後再試或關閉視窗後重新開啟應用程式。'
   }
 
@@ -556,7 +558,7 @@ function getEnvironmentMessage(env: HostEnvironment) {
     case 'teams-web':
       return {
         title: '偵測到 Teams 網頁版',
-        message: '若瀏覽器阻擋彈出視窗，請允許 Microsoft/Teams 的彈窗或改用桌面版。'
+        message: '授權流程將在同一頁面或新分頁進行。若瀏覽器提示「在桌面或帶標籤開啟」，建議直接選擇或改用桌面版以獲得完整體驗。'
       }
     case 'standalone':
       return {
