@@ -62,7 +62,12 @@ function App() {
 
         setEnvironment(detectedEnv)
 
-        if (detectedEnv === 'teams-desktop' || detectedEnv === 'teams-mobile') {
+        const isTeamsHost =
+          detectedEnv === 'teams-desktop' ||
+          detectedEnv === 'teams-web' ||
+          detectedEnv === 'teams-mobile'
+
+        if (isTeamsHost) {
           await loginViaTeams(context)
         } else {
           await loginViaMsal(context.user?.userPrincipalName, context.user?.tenant?.id)
