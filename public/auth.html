@@ -34,6 +34,30 @@
         line-height: 1.6;
         color: #4b5563;
       }
+      .actions {
+        margin-top: 24px;
+        display: flex;
+        justify-content: center;
+      }
+      .actions button {
+        padding: 12px 24px;
+        background: #2563eb;
+        color: white;
+        border: none;
+        border-radius: 999px;
+        font-size: 15px;
+        cursor: pointer;
+        transition: transform 0.15s ease, background 0.15s ease;
+        display: none;
+      }
+      .actions button:hover:not(:disabled) {
+        background: #1d4ed8;
+        transform: translateY(-1px);
+      }
+      .actions button:disabled {
+        background: #93c5fd;
+        cursor: not-allowed;
+      }
       .hint {
         margin-top: 20px;
         padding: 12px;
@@ -56,11 +80,17 @@
     <div class="card">
       <h1 id="title">請稍候</h1>
       <p id="message">正在準備 Microsoft 365 授權流程…</p>
+      <div class="actions">
+        <button id="loginButton" type="button">登入</button>
+      </div>
       <div id="hint" class="hint" style="display: none;"></div>
       <div id="error" class="error" style="display: none;"></div>
     </div>
 
     <script>
+      let msalInstance = null
+      let cachedLoginHint = undefined
+
       const msalConfig = {
         auth: {
           clientId: '33abd69a-d012-498a-bddb-8608cbf10c2d',
@@ -88,6 +118,56 @@
         const errorBox = document.getElementById('error')
         errorBox.textContent = message
         errorBox.style.display = 'block'
+      }
+
+      function isSafari() {
+        const ua = navigator.userAgent
+        const vendor = navigator.vendor
+        const isAppleVendor = vendor && vendor.includes('Apple')
+        const isSafariBrowser = /Safari/.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR/.test(ua)
+        return isAppleVendor && isSafariBrowser
+      }
+
+      function prepareManualLogin() {
+        const loginButton = document.getElementById('loginButton')
+        loginButton.style.display = 'inline-flex'
+        loginButton.disabled = false
+        loginButton.textContent = '登入'
+        loginButton.focus()
+        setStatus('需要授權', 'Safari 阻擋了自動登入，請手動開啟登入分頁。')
+        showHint('點擊「登入」按鈕後，Safari 將在新分頁開啟 Microsoft 登入頁。完成登入後請回到 Teams。')
+      }
+
+      async function handleManualLogin() {
+        const loginButton = document.getElementById('loginButton')
+        try {
+          loginButton.disabled = true
+          loginButton.textContent = '正在開啟登入頁面…'
+          const authRequest = {
+            scopes: ['User.Read'],
+            loginHint: cachedLoginHint,
+            redirectUri: window.location.origin + '/auth.html'
+          }
+
+          if (!msalInstance) {
+            throw new Error('尚未完成授權初始化，請重新整理頁面。')
+          }
+
+          const authUrl = await msalInstance.getAuthCodeUrl(authRequest)
+          const loginTab = window.open(authUrl, '_blank', 'noopener=yes,noreferrer=yes')
+
+          if (!loginTab) {
+            throw new Error('Safari 阻擋了新分頁，請允許開啟新分頁後再試一次。')
+          }
+
+          loginTab.focus()
+          showHint('登入頁面已於新分頁開啟。登入完成後，回到此分頁即可繼續。')
+        } catch (error) {
+          console.error('手動登入流程失敗', error)
+          showError(error.message || '無法開啟登入頁面，請稍後再試。')
+          loginButton.disabled = false
+          loginButton.textContent = '登入'
+        }
       }
 
       function loadMsal() {
@@ -137,11 +217,12 @@
         try {
           await microsoftTeams.app.initialize()
           const msalGlobal = await loadMsal()
-          const msalInstance = new msalGlobal.PublicClientApplication(msalConfig)
+          msalInstance = new msalGlobal.PublicClientApplication(msalConfig)
           await msalInstance.initialize()
 
           const params = new URLSearchParams(window.location.search)
           const loginHint = params.get('loginHint') || undefined
+          cachedLoginHint = loginHint
 
           if (loginHint) {
             showHint(`將以 ${loginHint} 嘗試自動登入…`)
@@ -167,6 +248,11 @@
             console.log('ssoSilent 失敗，改用 loginRedirect', silentError)
           }
 
+          if (isSafari()) {
+            prepareManualLogin()
+            return
+          }
+
           setStatus('需要授權', '即將重新導向至 Microsoft 登入頁面。')
           await msalInstance.loginRedirect({
             scopes: ['User.Read'],
@@ -180,6 +266,8 @@
           microsoftTeams.authentication.notifyFailure(message)
         }
       }
+
+      document.getElementById('loginButton').addEventListener('click', handleManualLogin)
 
       void getToken()
     </script>
