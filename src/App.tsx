@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { PublicClientApplication } from '@azure/msal-browser'
 import * as microsoftTeams from '@microsoft/teams-js'
 import './App.css'
 
 type AuthStatus = 'loading' | 'waitingConsent' | 'success' | 'error'
+type HostEnvironment = 'unknown' | 'teams-desktop' | 'teams-web' | 'teams-mobile' | 'standalone'
 
 interface UserInfo {
   displayName?: string
@@ -12,53 +14,181 @@ interface UserInfo {
   tenantId?: string
   chineseSurname?: string
   chineseGivenName?: string
+  givenName?: string
+  surname?: string
+  jobTitle?: string
+  department?: string
+  officeLocation?: string
+  mobilePhone?: string
+  businessPhones?: string[]
+  preferredLanguage?: string
+}
+
+const CLIENT_ID = '33abd69a-d012-498a-bddb-8608cbf10c2d'
+const TENANT_ID = 'cd4e36bd-ac9a-4236-9f91-a6718b6b5e45'
+const GRAPH_SCOPES = ['User.Read']
+
+const msalConfig = {
+  auth: {
+    clientId: CLIENT_ID,
+    authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+    redirectUri: window.location.origin + window.location.pathname
+  },
+  cache: {
+    cacheLocation: 'sessionStorage' as const,
+    storeAuthStateInCookie: false
+  }
 }
 
 function App() {
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [errorMessage, setErrorMessage] = useState<string>('')
+  const [environment, setEnvironment] = useState<HostEnvironment>('unknown')
+  const msalInstanceRef = useRef<PublicClientApplication | null>(null)
 
   useEffect(() => {
     const init = async () => {
       try {
         setStatus('loading')
         await microsoftTeams.app.initialize()
-        console.log('Teams SDK 初始化成功')
-
         const context = await microsoftTeams.app.getContext()
-        console.log('Teams context:', context)
+        const clientType = context.app?.host?.clientType ?? 'unknown'
+        const detectedEnv: HostEnvironment =
+          clientType === 'desktop' ? 'teams-desktop'
+            : clientType === 'web' ? 'teams-web'
+              : clientType === 'android' || clientType === 'ios' ? 'teams-mobile'
+                : 'teams-desktop'
 
-        const teamsUser = context.user as TeamsUser | undefined
-        const tenantId = context.user?.tenant?.id
+        setEnvironment(detectedEnv)
 
-        setStatus('waitingConsent')
-        const loginHint = teamsUser?.userPrincipalName || teamsUser?.email
-        const graphToken = await requestGraphToken(loginHint)
-        const graphProfile = await fetchGraphProfile(graphToken)
-
-        const user = deriveUserInfo({
-          teamsUser,
-          graphProfile,
-          tenantId
-        })
-
-        setUserInfo(user)
-        setStatus('success')
+        if (detectedEnv === 'teams-desktop' || detectedEnv === 'teams-mobile') {
+          await loginViaTeams(context)
+        } else {
+          await loginViaMsal(context.user?.userPrincipalName, context.user?.tenant?.id)
+        }
       } catch (error) {
-        console.error('登入流程失敗', error)
-        const message = normalizeErrorMessage(error)
-        setErrorMessage(message)
-        setStatus('error')
+        console.info('Not running inside Teams,改採瀏覽器流程', error)
+        setEnvironment('standalone')
+        try {
+          await loginViaMsal()
+        } catch (msalError) {
+          console.error('登入流程失敗', msalError)
+          const message = normalizeErrorMessage(msalError)
+          setErrorMessage(message)
+          setStatus('error')
+        }
       }
     }
 
     void init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const loginViaTeams = async (context: microsoftTeams.app.Context) => {
+    try {
+      setStatus('waitingConsent')
+      const teamsUser = context.user as TeamsUser | undefined
+      const loginHint = teamsUser?.userPrincipalName || teamsUser?.email
+
+      const tokenResult = await requestGraphToken(loginHint)
+      const graphProfile = await fetchGraphProfile(tokenResult.token)
+      const user = deriveUserInfo({
+        teamsUser,
+        graphProfile,
+        tenantId: context.user?.tenant?.id,
+        tokenPayload: tokenResult.payload
+      })
+
+      setUserInfo(user)
+      setStatus('success')
+    } catch (error) {
+      console.error('Teams 登入流程失敗', error)
+      const message = normalizeErrorMessage(error)
+      setErrorMessage(message)
+      setStatus('error')
+    }
+  }
+
+  const loginViaMsal = async (loginHint?: string, tenantId?: string) => {
+    try {
+      setStatus('waitingConsent')
+      const tokenResult = await ensureMsalGraphToken(loginHint)
+      if (!tokenResult) {
+        return
+      }
+
+      const graphProfile = await fetchGraphProfile(tokenResult.token)
+      const user = deriveUserInfo({
+        graphProfile,
+        tenantId: tenantId ?? tokenResult.payload?.tid,
+        tokenPayload: tokenResult.payload
+      })
+
+      setUserInfo(user)
+      setStatus('success')
+    } catch (error) {
+      console.error('MSAL 登入流程失敗', error)
+      const message = normalizeErrorMessage(error)
+      setErrorMessage(message)
+      setStatus('error')
+    }
+  }
+
+  const ensureMsalGraphToken = async (loginHint?: string): Promise<CachedGraphToken | null> => {
+    const cached = getCachedGraphToken()
+    if (cached) {
+      return cached
+    }
+
+    if (!msalInstanceRef.current) {
+      msalInstanceRef.current = new PublicClientApplication(msalConfig)
+      await msalInstanceRef.current.initialize()
+    }
+
+    const msalInstance = msalInstanceRef.current
+    const redirectResult = await msalInstance.handleRedirectPromise()
+    if (redirectResult?.accessToken) {
+      return cacheGraphToken(redirectResult.accessToken)
+    }
+
+    const accounts = msalInstance.getAllAccounts()
+    if (accounts.length > 0) {
+      try {
+        const tokenResponse = await msalInstance.acquireTokenSilent({
+          scopes: GRAPH_SCOPES,
+          account: accounts[0]
+        })
+        return cacheGraphToken(tokenResponse.accessToken)
+      } catch (error) {
+        await msalInstance.acquireTokenRedirect({
+          scopes: GRAPH_SCOPES,
+          account: accounts[0],
+          loginHint
+        })
+        return null
+      }
+    }
+
+    await msalInstance.loginRedirect({
+      scopes: GRAPH_SCOPES,
+      loginHint
+    })
+    return null
+  }
+
+  const environmentInfo = getEnvironmentMessage(environment)
 
   return (
     <div className="app">
       <div className="container">
+        {environmentInfo && (
+          <div className={`environment-banner environment-${environment}`}>
+            <strong>{environmentInfo.title}</strong>
+            <span>{environmentInfo.message}</span>
+          </div>
+        )}
+
         {status === 'loading' && (
           <div className="status-card loading">
             <div className="spinner"></div>
@@ -80,14 +210,11 @@ function App() {
             <div className="success-icon">✓</div>
             <h1>登入成功！</h1>
             <div className="user-info">
-              <p><strong>顯示名稱：</strong>{userInfo.displayName || '未提供'}</p>
-              <p><strong>中文姓名：</strong>
-                {userInfo.chineseSurname || userInfo.chineseGivenName
-                  ? `${userInfo.chineseSurname ?? ''}${userInfo.chineseGivenName ?? ''}`
-                  : '未提供'}
-              </p>
-              <p><strong>帳號：</strong>{userInfo.userPrincipalName || userInfo.email || '未提供'}</p>
-              <p><strong>使用者 ID：</strong>{userInfo.id || '未提供'}</p>
+              {renderUserInfoRows(userInfo).map(item => (
+                <p key={item.label}>
+                  <strong>{item.label}：</strong>{item.value}
+                </p>
+              ))}
             </div>
           </div>
         )}
@@ -122,24 +249,41 @@ interface GraphProfile {
   mail?: string
   givenName?: string
   surname?: string
+  jobTitle?: string
+  department?: string
+  officeLocation?: string
+  mobilePhone?: string
+  businessPhones?: string[]
+  preferredLanguage?: string
+}
+
+interface TokenPayload {
+  tid?: string
+  preferred_username?: string
+  name?: string
+  given_name?: string
+  family_name?: string
+  upn?: string
+  exp?: number
 }
 
 interface DeriveParams {
   teamsUser?: TeamsUser
   graphProfile?: GraphProfile
   tenantId?: string
+  tokenPayload?: TokenPayload
 }
 
 function deriveUserInfo(params: DeriveParams): UserInfo {
-  const { teamsUser, graphProfile, tenantId } = params
+  const { teamsUser, graphProfile, tenantId, tokenPayload } = params
 
   const displayName = graphProfile?.displayName ?? teamsUser?.displayName
-  const email = graphProfile?.mail ?? teamsUser?.email ?? teamsUser?.userPrincipalName
-  const userPrincipalName = graphProfile?.userPrincipalName ?? teamsUser?.userPrincipalName
+  const email = graphProfile?.mail ?? teamsUser?.email ?? tokenPayload?.preferred_username ?? teamsUser?.userPrincipalName
+  const userPrincipalName = graphProfile?.userPrincipalName ?? teamsUser?.userPrincipalName ?? tokenPayload?.preferred_username
   const id = graphProfile?.id ?? teamsUser?.id ?? teamsUser?.aadObjectId
 
-  const preferSurname = graphProfile?.surname
-  const preferGivenName = graphProfile?.givenName
+  const preferSurname = graphProfile?.surname ?? tokenPayload?.family_name
+  const preferGivenName = graphProfile?.givenName ?? tokenPayload?.given_name
 
   const fallback = splitChineseName(displayName)
 
@@ -148,15 +292,23 @@ function deriveUserInfo(params: DeriveParams): UserInfo {
     email,
     userPrincipalName,
     id,
-    tenantId,
+    tenantId: tenantId ?? tokenPayload?.tid,
     chineseSurname: preferSurname ?? fallback.surname,
-    chineseGivenName: preferGivenName ?? fallback.givenName
+    chineseGivenName: preferGivenName ?? fallback.givenName,
+    givenName: graphProfile?.givenName ?? tokenPayload?.given_name,
+    surname: graphProfile?.surname ?? tokenPayload?.family_name,
+    jobTitle: graphProfile?.jobTitle,
+    department: graphProfile?.department,
+    officeLocation: graphProfile?.officeLocation,
+    mobilePhone: graphProfile?.mobilePhone,
+    businessPhones: graphProfile?.businessPhones,
+    preferredLanguage: graphProfile?.preferredLanguage
   }
 }
 
-let graphAuthPromise: Promise<string> | null = null
+let graphAuthPromise: Promise<CachedGraphToken> | null = null
 
-async function requestGraphToken(loginHint?: string): Promise<string> {
+async function requestGraphToken(loginHint?: string): Promise<CachedGraphToken> {
   const cached = getCachedGraphToken()
   if (cached) {
     return cached
@@ -174,9 +326,9 @@ async function requestGraphToken(loginHint?: string): Promise<string> {
       height: 535,
       successCallback: (token: string) => {
         console.log('取得 Graph Token 成功')
-        cacheGraphToken(token)
+        const cachedToken = cacheGraphToken(token)
         graphAuthPromise = null
-        resolve(token)
+        resolve(cachedToken)
       },
       failureCallback: (reason: string) => {
         console.error('Graph 授權失敗:', reason)
@@ -236,6 +388,10 @@ function translateAuthError(message: string): string {
     return '您取消了授權。若要完成登入，請允許 Teams 對話框中的授權要求。'
   }
 
+  if (message.includes('popup_window_error')) {
+    return '瀏覽器阻擋了授權視窗。請允許 Teams / Microsoft 的彈出視窗，或改用 Teams 桌面版。'
+  }
+
   if (message.includes('not_supported')) {
     return '目前的 Teams 用戶端不支援此登入流程，請更新 Teams 或改用網頁版。'
   }
@@ -251,6 +407,7 @@ const doubleSurnames = [
 
 const GRAPH_TOKEN_CACHE_KEY = 'teams-graph-token'
 const GRAPH_TOKEN_EXPIRES_AT_KEY = 'teams-graph-token-exp'
+const GRAPH_TOKEN_PAYLOAD_KEY = 'teams-graph-token-payload'
 
 function splitChineseName(name?: string) {
   if (!name) {
@@ -287,10 +444,11 @@ function splitChineseName(name?: string) {
   return { surname: trimmed, givenName: undefined }
 }
 
-function getCachedGraphToken(): string | null {
+function getCachedGraphToken(): CachedGraphToken | null {
   try {
     const token = sessionStorage.getItem(GRAPH_TOKEN_CACHE_KEY)
     const expiresAtRaw = sessionStorage.getItem(GRAPH_TOKEN_EXPIRES_AT_KEY)
+    const payloadRaw = sessionStorage.getItem(GRAPH_TOKEN_PAYLOAD_KEY)
     if (!token || !expiresAtRaw) {
       return null
     }
@@ -301,33 +459,38 @@ function getCachedGraphToken(): string | null {
       return null
     }
 
-    return token
+    const payload = payloadRaw ? (JSON.parse(payloadRaw) as TokenPayload) : undefined
+    return { token, payload }
   } catch (error) {
     console.warn('讀取快取 Token 失敗', error)
     return null
   }
 }
 
-function cacheGraphToken(token: string) {
+function cacheGraphToken(token: string): CachedGraphToken {
   try {
     const payload = decodeJwt(token)
-    if (!payload?.exp) {
-      return
-    }
-    const expiresAt = payload.exp * 1000
+    const expiresAt = payload?.exp ? payload.exp * 1000 : Date.now() + 50 * 60 * 1000
     sessionStorage.setItem(GRAPH_TOKEN_CACHE_KEY, token)
     sessionStorage.setItem(GRAPH_TOKEN_EXPIRES_AT_KEY, String(expiresAt))
+    if (payload) {
+      const { exp, ...rest } = payload
+      sessionStorage.setItem(GRAPH_TOKEN_PAYLOAD_KEY, JSON.stringify(rest))
+    }
+    return { token, payload }
   } catch (error) {
     console.warn('快取 Graph Token 失敗', error)
+    return { token }
   }
 }
 
 function clearGraphTokenCache() {
   sessionStorage.removeItem(GRAPH_TOKEN_CACHE_KEY)
   sessionStorage.removeItem(GRAPH_TOKEN_EXPIRES_AT_KEY)
+  sessionStorage.removeItem(GRAPH_TOKEN_PAYLOAD_KEY)
 }
 
-function decodeJwt(token: string): { exp?: number } {
+function decodeJwt(token: string): TokenPayload {
   const parts = token.split('.')
   if (parts.length < 2) {
     return {}
@@ -342,5 +505,66 @@ function decodeJwt(token: string): { exp?: number } {
     console.warn('解析 Token 失敗', error)
     return {}
   }
+}
+
+function renderUserInfoRows(user: UserInfo) {
+  const chineseName = user.chineseSurname || user.chineseGivenName
+    ? `${user.chineseSurname ?? ''}${user.chineseGivenName ?? ''}`
+    : undefined
+  const englishName =
+    user.givenName || user.surname ? `${user.givenName ?? ''} ${user.surname ?? ''}`.trim() : undefined
+
+  const rows = [
+    { label: '顯示名稱', value: user.displayName },
+    { label: '中文姓名', value: chineseName },
+    { label: '英文姓名', value: englishName },
+    { label: '帳號 (UPN)', value: user.userPrincipalName },
+    { label: 'Email', value: user.email },
+    { label: '職稱', value: user.jobTitle },
+    { label: '部門', value: user.department },
+    { label: '辦公地點', value: user.officeLocation },
+    { label: '手機', value: user.mobilePhone },
+    {
+      label: '公司電話',
+      value: user.businessPhones && user.businessPhones.length > 0 ? user.businessPhones.join('、') : undefined
+    },
+    { label: '偏好語言', value: user.preferredLanguage },
+    { label: '使用者 ID', value: user.id },
+    { label: '租戶 ID', value: user.tenantId }
+  ]
+
+  return rows.filter(item => item.value)
+}
+
+function getEnvironmentMessage(env: HostEnvironment) {
+  switch (env) {
+    case 'teams-desktop':
+      return {
+        title: '偵測到 Teams 桌面版',
+        message: '使用 Teams 內建授權視窗，過程中不需要輸入帳密。'
+      }
+    case 'teams-mobile':
+      return {
+        title: '偵測到 Teams 行動版',
+        message: '使用 Teams 行動版內建授權視窗。'
+      }
+    case 'teams-web':
+      return {
+        title: '偵測到 Teams 網頁版',
+        message: '若瀏覽器阻擋彈出視窗，請允許 Microsoft/Teams 的彈窗或改用桌面版。'
+      }
+    case 'standalone':
+      return {
+        title: '偵測到瀏覽器模式',
+        message: '使用 MSAL loginRedirect 流程完成登入，可直接在同一視窗登入。'
+      }
+    default:
+      return null
+  }
+}
+
+interface CachedGraphToken {
+  token: string
+  payload?: TokenPayload
 }
 
