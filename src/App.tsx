@@ -122,9 +122,21 @@ function App() {
       setUserInfo(user)
       setStatus('success')
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      if (
+        message.includes('embedded browser') ||
+        message.includes('NotAllowedInThisContext') ||
+        message.includes('Authentication cancelled by user') ||
+        message.includes('was unable to be opened')
+      ) {
+        console.warn('偵測到 Safari 需要手動授權:', message)
+        setStatus('manual')
+        return
+      }
+
       console.error('Teams 登入流程失敗', error)
-      const message = normalizeErrorMessage(error)
-      setErrorMessage(message)
+      const friendly = normalizeErrorMessage(error)
+      setErrorMessage(friendly)
       setStatus('error')
     }
   }
